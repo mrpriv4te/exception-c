@@ -49,6 +49,26 @@ void test_throw_uncaught(void **state) // NOLINT
     }
 }
 
+void test_throw_uncaught_without_try_block(void **state) // NOLINT
+{
+    (void)state;
+
+    pid_t pid = fork();
+
+    if (pid == 0) {
+        throw(22, "Uncaught exception");
+
+        exit(EXIT_SUCCESS); // NOLINT
+    } else if (pid > 0) {
+        int status = 0;
+        waitpid(pid, &status, 0);
+        assert_true(WIFEXITED(status));
+        assert_int_equal(WEXITSTATUS(status), 22);
+    } else {
+        fail_msg("Fork failed");
+    }
+}
+
 void *thread_function(void *arg) // NOLINT
 {
     int thread_id = *(int *)arg;
@@ -196,6 +216,7 @@ int main(void)
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_throw_and_catch),
         cmocka_unit_test(test_throw_uncaught),
+        cmocka_unit_test(test_throw_uncaught_without_try_block),
         cmocka_unit_test(test_message_update),
         cmocka_unit_test(test_nested_function_call),
         cmocka_unit_test(test_multithreaded_exceptions),

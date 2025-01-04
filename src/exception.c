@@ -97,6 +97,8 @@ void exception_throw(int code, const char *fmt, ...)
     exception_set_message(fmt, varg);
     va_end(varg);
 
+    exception_state.exception.code = code;
+
     if (cflow != NULL && cflow->jmp_buf != NULL) {
         longjmp(*cflow->jmp_buf, code);
     }
