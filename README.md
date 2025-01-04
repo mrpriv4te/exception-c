@@ -237,7 +237,7 @@ The project includes unit tests written with [CMocka](https://cmocka.org/) that 
 2. Build and Execute Tests:
 
    ```bash
-   cmake --build . && ctest
+   cmake --build . && ctest -V
    ```
 
 Example output:
