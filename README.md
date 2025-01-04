@@ -154,16 +154,22 @@
 
 ```c
 #include "exception.h"
+#include <stdlib.h>
 #include <stdio.h>
 
 int main() {
-    try {
+    try({
         throw(1, "An error occurred: %s", "example message");
-    }
-    catch(1) {
+    } catch(1) {
         printf("Caught exception: %s\n", exception()->message);
-    }
-    endtry;
+    })
+
+    try({
+        int rand_exception_code = rand();
+        throw(rand_exception_code, "An other error occurred: %s", "example message");
+    } catch(all_exception) {
+        printf("Caught exception: %s with rand code %d\n", exception()->message, exception()->code);
+    })
 
     return 0;
 }
@@ -180,15 +186,13 @@ int main() {
 void *thread_function(void *arg) {
     int thread_id = *(int *)arg;
 
-    try {
+    try({
         if (thread_id % 2 == 0) {
             throw(100 + thread_id, "Thread %d exception", thread_id);
         }
-    }
-    catch(100 + thread_id) {
+    } catch(100 + thread_id) {
         printf("Caught exception in thread %d: %s\n", thread_id, exception()->message);
-    }
-    endtry;
+    })
 
     pthread_exit(NULL);
 }
