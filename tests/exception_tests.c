@@ -19,13 +19,12 @@ void test_throw_and_catch(void **state)
 {
     (void)state;
 
-    try {
+    try({
         throw(1, "Test exception");
     } catch (1) {
         assert_string_equal(exception()->message, "Test exception");
         assert_int_equal(exception()->code, 1);
-    }
-    endtry;
+    })
 }
 
 void test_throw_uncaught(void **state) // NOLINT
@@ -35,10 +34,10 @@ void test_throw_uncaught(void **state) // NOLINT
     pid_t pid = fork();
 
     if (pid == 0) {
-        try {
+        try({
             throw(2, "Uncaught exception");
-        }
-        endtry;
+        })
+
         exit(EXIT_SUCCESS); // NOLINT
     } else if (pid > 0) {
         int status = 0;
@@ -54,7 +53,7 @@ void *thread_function(void *arg) // NOLINT
 {
     int thread_id = *(int *)arg;
 
-    try {
+    try({
         if (thread_id % 2 == 0) {
             throw(100 + thread_id, "Thread %d exception", thread_id);
         }
@@ -64,8 +63,7 @@ void *thread_function(void *arg) // NOLINT
             "Thread %d exception", thread_id);
         assert_string_equal(exception()->message, expected_message);
         assert_int_equal(exception()->code, 100 + thread_id);
-    }
-    endtry;
+    })
 
     return NULL;
 }
@@ -92,15 +90,14 @@ void test_message_update(void **state) // NOLINT
 {
     (void)state;
 
-    try {
+    try({
         throw(3, "First exception");
     } catch (3) {
         assert_string_equal(exception()->message, "First exception");
         throw(4, "Second exception");
     } catch (4) {
         assert_string_equal(exception()->message, "Second exception");
-    }
-    endtry;
+    })
 }
 
 void test_thread_safety(void **state)
@@ -124,10 +121,10 @@ void *thread_function_uncaught(void *arg) // NOLINT
     int thread_id = *(int *)arg;
 
     if (thread_id % 2 == 0) {
-        try {
+        try({
             throw(50 + thread_id, "Thread %d uncaught exception", thread_id);
-        }
-        endtry;
+        })
+
         (void)fprintf(stderr, "Thread %d should have terminated.\n", thread_id);
         pthread_exit((void *)EXIT_FAILURE);
     }
@@ -172,28 +169,26 @@ static void second_level_function(void)
 
 static void first_level_function(void)
 {
-    try {
+    try({
         second_level_function();
     } catch (5) {
         assert_string_equal(exception()->message, "Third level exception");
         assert_int_equal(exception()->code, 5);
         throw(6, "First level rethrown exception");
-    }
-    endtry;
+    })
 }
 
 void test_nested_function_call(void **state)
 {
     (void)state;
 
-    try {
+    try({
         first_level_function();
     } catch (6) {
         assert_string_equal(
             exception()->message, "First level rethrown exception");
         assert_int_equal(exception()->code, 6);
-    }
-    endtry;
+    })
 }
 
 int main(void)

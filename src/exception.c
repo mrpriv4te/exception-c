@@ -1,5 +1,7 @@
 #include "exception.h"
 
+#include <assert.h>
+#include <bits/pthreadtypes.h>
 #include <pthread.h>
 #include <setjmp.h>
 #include <stdarg.h>
@@ -7,70 +9,24 @@
 #include <stdlib.h>
 #include <threads.h>
 
-void init_exception(void) __attribute__((constructor));
-void init_exception(void)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wint-to-pointer-cast"
+
+static _Thread_local pthread_t exception_main_thread_id; // NOLINT
+
+static _Thread_local exception_state_t exception_state = /* NOLINT */ {
+    .exception = {.message = NULL, .code = 0},
+    .control_flow = {.head = NULL},
+};
+
+static void init_exception(void) __attribute__((constructor));
+static void init_exception(void)
 {
-    exception_main_thread_id(pthread_self());
+    exception_main_thread_id = pthread_self();
 }
 
-pthread_t exception_main_thread_id(pthread_t thread_id)
+static void exception_set_message(const char *fmt, va_list varg)
 {
-    static _Thread_local pthread_t main_thread_id;
-
-    if (thread_id != -1) {
-        main_thread_id = thread_id;
-    }
-    return main_thread_id;
-}
-
-internal_exception_t *internal_exception(void)
-{
-    static _Thread_local exception_t exception = {.message = NULL, .code = 0};
-    static _Thread_local internal_exception_t iex = {
-        .jmp_buf = NULL, .exception = NULL};
-
-    if (iex.exception == NULL) {
-        iex.exception = &exception;
-    }
-
-    return &iex;
-}
-
-exception_t *exception(void)
-{
-    internal_exception_t *iex = internal_exception();
-
-    return iex->exception;
-}
-
-jmp_buf *internal_exception_save()
-{
-    internal_exception_t *iex = internal_exception();
-
-    return iex->jmp_buf;
-}
-
-jmp_buf *internal_exception_try(jmp_buf *buf)
-{
-    internal_exception_t *iex = internal_exception();
-
-    iex->jmp_buf = buf;
-    return iex->jmp_buf;
-}
-
-bool internal_exception_catch(int code)
-{
-    internal_exception_t *iex = internal_exception();
-
-    if (!code || iex->exception->code == code) {
-        return true;
-    }
-    return false;
-}
-
-static void internal_exception_set_message(const char *fmt, va_list varg)
-{
-    internal_exception_t *iex = internal_exception();
     char *message = NULL;
     va_list varg_copy;
     size_t size = 0;
@@ -81,43 +37,102 @@ static void internal_exception_set_message(const char *fmt, va_list varg)
     if (size > 0) {
         message = calloc(size + 1, sizeof(char));
         if (message) {
-            size = vsnprintf(message, size + 1, fmt, varg);
+            (void)vsnprintf(message, size + 1, fmt, varg);
         }
     }
-    if (iex->exception->message) {
-        free(iex->exception->message);
+    if (exception_state.exception.message) {
+        free(exception_state.exception.message);
     }
-    iex->exception->message = message;
+    exception_state.exception.message = message;
 }
 
-void internal_exception_throw(int code, const char *fmt, ...)
+control_flow_t *exception_control_flow_push(control_flow_node_t *cflow)
 {
-    internal_exception_t *iex = internal_exception();
+    assert(cflow != NULL || cflow->jmp_buf != NULL);
+    cflow->next = exception_state.control_flow.head;
+    exception_state.control_flow.head = cflow;
+    return &exception_state.control_flow;
+}
+
+control_flow_node_t *exception_control_flow_pop()
+{
+    control_flow_node_t *tmp = exception_state.control_flow.head;
+
+    if (tmp != NULL) {
+        exception_state.control_flow.head = tmp->next;
+    }
+    return tmp;
+}
+
+const exception_t *exception()
+{
+    return &exception_state.exception;
+}
+
+int exception_try(int code)
+{
+    exception_state.exception.code = code;
+    return code;
+}
+
+bool exception_catch(int code)
+{
+    if (!code || exception_state.exception.code == code) {
+        return true;
+    }
+    return false;
+}
+
+void exception_throw(int code, const char *fmt, ...)
+{
+    control_flow_node_t *cflow = exception_state.control_flow.head;
     va_list varg;
 
-    if (iex->jmp_buf) {
+    if (cflow != NULL && cflow->jmp_buf != NULL) {
         va_start(varg, fmt);
-        internal_exception_set_message(fmt, varg);
+        exception_set_message(fmt, varg);
         va_end(varg);
-        longjmp(*iex->jmp_buf, code);
+        longjmp(*cflow->jmp_buf, code);
     }
 }
 
-void internal_exception_rethrow(void)
+void exception_rethrow()
 {
-    internal_exception_t *iex = internal_exception();
+    control_flow_node_t *cflow = exception_state.control_flow.head;
 
-    if (iex->jmp_buf) {
-        longjmp(*iex->jmp_buf, iex->exception->code);
+    if (cflow != NULL && cflow->jmp_buf != NULL) {
+        longjmp(*cflow->jmp_buf, exception_state.exception.code);
     }
 }
 
-void internal_exception_destroy(void)
+void exception_exit(const char *func, const char *file, int line)
 {
-    internal_exception_t *iex = internal_exception();
+    exception_t *exc = &exception_state.exception;
+    pthread_t thread_id = pthread_self();
 
-    if (iex->exception->message) {
-        free(iex->exception->message);
+    if (thread_id == exception_main_thread_id) {
+#ifndef NDEBUG
+        errx(exc->code, "%s:%d: %s(): %s (code %d)", file, line, func,
+            exc->message, exc->code);
+#else
+        errx(exc->code, "%s (code %d)" exc->message, exc->code);
+#endif
+    } else {
+#ifndef NDEBUG
+        warnx("thread %ld: %s:%d: %s(): %s (code %d)", thread_id, file, line,
+            func, exc->message, exc->code);
+#else
+        warnx("thread %ld: %s (code %d)" exc->message, exc->code);
+#endif
+        pthread_exit((void *)exc->code); // NOLINT
     }
-    iex->exception->message = NULL;
+}
+
+static void destroy_exception(void) __attribute__((destructor));
+static void destroy_exception(void)
+{
+    if (exception_state.exception.message) {
+        free(exception_state.exception.message);
+        exception_state.exception.message = NULL;
+    }
 }
