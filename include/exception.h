@@ -13,15 +13,15 @@
     do {                                                                       \
         if (!exception_try(setjmp(*(exception_control_flow_push(               \
                 &(control_flow_node_t){.jmp_buf = &(jmp_buf){}, .next = NULL}) \
-                                        ->head->jmp_buf))))                    \
-            /* NOLINTBEGIN */                                                  \
-            code_block /* NOLINTEND */                                         \
+                    ->head->jmp_buf))))                                        \
+            code_block /* NOLINT */                                            \
                 else                                                           \
             {                                                                  \
                 (void)exception_control_flow_pop();                            \
                 rethrow();                                                     \
             }                                                                  \
         (void)exception_control_flow_pop();                                    \
+        exception_cleanup();                                                   \
     } while (0);
 
 #define catch(code) else if (exception_catch(code))
@@ -67,4 +67,5 @@ int exception_try(int code);
 bool exception_catch(int code);
 void exception_throw(int code, const char *fmt, ...);
 void exception_rethrow();
+void exception_cleanup();
 _Noreturn void exception_exit(const char *func, const char *file, int line);
