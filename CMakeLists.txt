@@ -3,6 +3,10 @@ cmake_minimum_required(VERSION 3.15)
 # Project Metadata
 project(LibException VERSION 1.0 LANGUAGES C)
 
+# Settings
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Options
 option(BUILD_TESTING "Enable building of tests" ON)
 
@@ -13,6 +17,7 @@ target_compile_features(exception PRIVATE c_std_11)
 
 # Enable testing
 if(BUILD_TESTING)
+    include(CTest)
     enable_testing()
     add_subdirectory(tests)
 endif()
